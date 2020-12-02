@@ -162,7 +162,7 @@ class _MyAppState extends State<MyApp> {
       });
 
       if (_fetchedEmployee != null) {
-        var saveAlcoResponse = await _saveAlcoholTest(_alcoholTest);
+        var saveAlcoResponse = await _allRequest.saveAlcoholTest(_alcoholTest);
         if (saveAlcoResponse.toString().contains('errors')) {
           _showSnackbarAndReset(
               'Error al tratar de guardar registro', Colors.redAccent);
@@ -231,22 +231,8 @@ class _MyAppState extends State<MyApp> {
       _resetValues();
     });
 
-    // // inspect(_alcoholTest);
-    // var saveAlcoResponse = await _saveAlcoholTest(_alcoholTest);
-    // // inspect(saveAlcoResponse);
-    // // print(saveAlcoResponse.toString().contains('breathAlcoholTestId'));
-    // // print(saveAlcoResponse.toString().contains('errors'));
-    // if (saveAlcoResponse.toString().contains('errors')) {
-    //   _showSnackbarAndReset(
-    //       'Error al tratar de guardar registro', Colors.redAccent);
-    // }
-    // if (saveAlcoResponse.toString().contains('breathAlcoholTestId')) {
-    //   _showSnackbar('Registro guardado', Colors.greenAccent);
-    //   return;
-    // }
-
     if (_fetchedEmployee != null) {
-      var saveAlcoResponse = await _saveAlcoholTest(_alcoholTest);
+      var saveAlcoResponse = await _allRequest.saveAlcoholTest(_alcoholTest);
       if (saveAlcoResponse.toString().contains('errors')) {
         _showSnackbarAndReset(
             'Error al tratar de guardar registro', Colors.redAccent);

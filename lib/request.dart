@@ -63,7 +63,7 @@ class Request {
     }
   }
 
-  Future saveTemperature(AlcoholTest alco) async {
+  Future saveAlcoholTest(AlcoholTest alco) async {
     inspect(alco);
     String mutationString =
         // "mutation{ newalcoDocument(input: { alcoerature: ${alco.alcoholResult}, companyId: \"${alco.company.companyId}\", companyName: \"${alco.company.companyName}\", rfid: ${alco.employee.rfid}, employeeId: \"${alco.employee.companyEmployeeId}\", equipmentId: \"${alco.equipment.equipmentId}\"  }) { rfid } }";
