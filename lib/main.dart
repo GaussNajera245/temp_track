@@ -7,15 +7,14 @@ import 'dart:async';
 import 'package:usb_serial/usb_serial.dart';
 import 'package:usb_serial/transaction.dart';
 
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-import 'dart:math'; // For testing purposes
+// import 'dart:math'; // For testing purposes
 
 import 'Company.dart';
 import 'Employee.dart';
 import 'Equipment.dart';
-import 'AlcoholTest.dart';
+import 'TemperatureDoc.dart';
 import 'request.dart';
 
 import 'package:flutter/services.dart';
@@ -49,32 +48,40 @@ class _MyAppState extends State<MyApp> {
   int _deviceId;
   TextEditingController _textController = TextEditingController();
 
-  static RegExp exp = new RegExp(r'Tbody=(\d+\.\d+)', caseSensitive: false);
-  static RegExp exp2 = new RegExp(r'===========', caseSensitive: false);
   static String apiEndpoint = 'https://okku.herokuapp.com/';
+  static const token =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFsY29Db21wYW55RGVtb0VxMSIsImVtYWlsIjoiYWRtaW5AY2FyZGlvdHJhY2subXgiLCJjb21wYW55SWQiOiI1ZWZlMzZiOTdiNzliYzBmMDc0NWQ4YTkiLCJfaWQiOiI1ZWZlMzc5MTZmMjgwOTBmMjY1OGI5MzMiLCJpYXQiOjE1OTM3MTg2NzMsImV4cCI6MzMxNTEzMTg2NzN9.XotPA8BWp-znRJa_xhTyoiHtmauwXbz6gFlsHl9vAi4';
+  var _allRequest = Request(token: token, apiEndpoint: apiEndpoint);
+
   bool _loading = false;
   String dataBuffer = '';
   Timer _timer = Timer(Duration(milliseconds: 1), () {});
-  // double _alcoholTest.alcoholResult = 0.0;
-  Color get _alcoColor {
-    if (_alcoholTest.alcoholResult == AlcoholResult.alcoholFound) {
-      return Colors.red;
+
+  Color get _backColor {
+    if ( _temp.temperature() == null || _temp.temperature() == 0 ) {
+      return Colors.lightBlue;
+    } else {
+      if (_temp.temperature() < 36.8) {
+        return Colors.green;
+      } else if (_temp.temperature() >= 36.8 && _temp.temperature() < 37.3) {
+        return Colors.yellow;
+      } else if (_temp.temperature() >= 37.3) {
+        return Colors.red;
+      } else {
+        return Colors.lightBlue;
+      }
     }
-    if (_alcoholTest.alcoholResult == AlcoholResult.alcoholNotFound) {
-      return Colors.green;
-    }
-    return Colors.lightBlue;
   }
 
   final GlobalKey<ScaffoldState> _scaffoldKey = new GlobalKey<ScaffoldState>();
 
   bool get notEmptyPorts {
-    if (_ports.length == 0) {
+    if (_ports == null || _ports.length == 0) {
       setState(() {
         _status = "Disconnected";
       });
     }
-    return _ports.length > 0;
+    return _ports != null && _ports.length > 0;
   }
 
   FocusNode myFocusNode;
@@ -83,18 +90,14 @@ class _MyAppState extends State<MyApp> {
   final Connectivity _connectivity = Connectivity();
   StreamSubscription<ConnectivityResult> _connectivitySubscription;
 
-  static Company _company = Company(companyName: '', companyId: '');
-  static Equipment _equipment = Equipment(equipmentId: 'ALCO--XXXXX');
+  static Company _company =
+      Company(companyName: 'alcos', companyId: '5efe36b97b79bc0f0745d8a9');
+  static Equipment _equipment = Equipment(equipmentId: 'TEMP--XXXXX');
   Employee _fetchedEmployee;
-  AlcoholTest _alcoholTest =
-      AlcoholTest(company: _company, equipment: _equipment);
-
-  static const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFsY29Db21wYW55RGVtb0VxMSIsImVtYWlsIjoiYWRtaW5AY2FyZGlvdHJhY2subXgiLCJjb21wYW55SWQiOiI1ZWZlMzZiOTdiNzliYzBmMDc0NWQ4YTkiLCJfaWQiOiI1ZWZlMzc5MTZmMjgwOTBmMjY1OGI5MzMiLCJpYXQiOjE1OTM3MTg2NzMsImV4cCI6MzMxNTEzMTg2NzN9.XotPA8BWp-znRJa_xhTyoiHtmauwXbz6gFlsHl9vAi4';
-  var _allRequest = Request(token: token, apiEndpoint: apiEndpoint);
+  TemperatureDoc _temp = TemperatureDoc(company: _company, equipment: _equipment);
 
   Future<bool> _connectTo(device) async {
     _serialData.clear();
-    _alcoholTest.alcoholResult = AlcoholResult.notSet;
 
     if (_subscription != null) {
       _subscription.cancel();
@@ -130,52 +133,37 @@ class _MyAppState extends State<MyApp> {
     _deviceId = device.deviceId;
     await _port.setDTR(true);
     await _port.setRTS(true);
-    await _port.setPortParameters( 9600, UsbPort.DATABITS_8, UsbPort.STOPBITS_1, UsbPort.PARITY_NONE );
+    await _port.setPortParameters(
+        9600, UsbPort.DATABITS_8, UsbPort.STOPBITS_1, UsbPort.PARITY_NONE);
 
     _transaction = Transaction.stringTerminated(
         _port.inputStream, Uint8List.fromList([13, 10]));
 
-    _subscription = _transaction.stream.listen((String line) async {
-      var alcoStatus = line;
+    var buff = '';
+    _subscription = _transaction.stream.listen((String line) {
+      var currentData = line.split(" ").join("");
+      RegExp exp = new RegExp(r'Tbody=(\d+\.\d+)', caseSensitive: false);
+      buff = buff + currentData;
 
-      if (line != 'TRUE' && line != 'FALSE') {
-        _alcoholTest.alcoholResult = AlcoholResult.notSet;
-      }
+      var matches = exp.allMatches(buff);
+      if (exp.hasMatch(currentData)) {
+        _timer.cancel();
 
-      if (alcoStatus == 'FALSE') {
-        setState(() {
-          _alcoholTest.alcoholResult = AlcoholResult.alcoholFound;
+        _timer = Timer(Duration(milliseconds: 100), () {
+          var found = matches.last.group(0);
+          var passed = found.substring(6);
+          log(passed);
+          setState(() {
+            _temp.temp = passed;
+          });
+
+          _testTemperature();
         });
       }
-
-      if (alcoStatus == 'TRUE') {
-        setState(() {
-          _alcoholTest.alcoholResult = AlcoholResult.alcoholNotFound;
-        });
+      if (currentData.substring(0, 4) == "Vbat") {
+        buff = '';
       }
-
-      // _changeAlcoStatus();
-
-      _timer.cancel();
-      _timer = Timer(Duration(seconds: 5), () {
-        _resetValues();
-      });
-
-      if (_fetchedEmployee != null) {
-        var saveAlcoResponse = await _allRequest.saveAlcoholTest(_alcoholTest);
-        if (saveAlcoResponse.toString().contains('errors')) {
-          _showSnackbarAndReset(
-              'Error al tratar de guardar registro', Colors.redAccent);
-          return;
-        }
-        if (saveAlcoResponse.toString().contains('breathAlcoholTestId')) {
-          _showSnackbar('Registro guardado', Colors.greenAccent);
-          return;
-        }
-      } else {
-        _showSnackbar("Por favor ingresa # de usuario antes de hacer la prueba",
-            Colors.orange[900]);
-      }
+      log('.');
     });
 
     setState(() {
@@ -184,11 +172,9 @@ class _MyAppState extends State<MyApp> {
     return true;
   }
 
-
   void _getPorts() async {
     _ports = [];
     List<UsbDevice> devices = await UsbSerial.listDevices();
-    // print(devices);
 
     devices.forEach((device) {
       _ports.add(ListTile(
@@ -212,43 +198,6 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  void _testAlcohol() async {
-    Random random = new Random();
-    List alcoResults = [
-      AlcoholResult.alcoholFound,
-      AlcoholResult.alcoholNotFound
-    ];
-    int randomBool = random.nextInt(2);
-
-    setState(() {
-      _alcoholTest.alcoholResult = alcoResults[randomBool];
-    });
-
-    // Set timer
-    // TODO: Do we have to cancel timer?
-    _timer.cancel();
-    _timer = Timer(Duration(seconds: 5), () {
-      _resetValues();
-    });
-
-    if (_fetchedEmployee != null) {
-      var saveAlcoResponse = await _allRequest.saveAlcoholTest(_alcoholTest);
-      if (saveAlcoResponse.toString().contains('errors')) {
-        _showSnackbarAndReset(
-            'Error al tratar de guardar registro', Colors.redAccent);
-        return;
-      }
-      if (saveAlcoResponse.toString().contains('breathAlcoholTestId')) {
-        _showSnackbar('Registro guardado', Colors.greenAccent);
-        return;
-      }
-    } else {
-      _showSnackbar("Por favor ingresa # de usuario antes de hacer la prueba",
-          Colors.orange[900]);
-    }
-  }
-
-
   void _showSnackbar(String message, Color color) {
     _scaffoldKey.currentState.showSnackBar(SnackBar(
       backgroundColor: color,
@@ -266,25 +215,23 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-
-
   void _getEmployee(employeeRfid) async {
     if (_connectionStatus == 'ConnectivityResult.none') {
-      _showSnackbarAndReset(
-          'Por favor conecta el dispositivo a internet', Colors.redAccent);
+      _showSnackbarAndReset( 'Por favor conecta el dispositivo a internet', Colors.redAccent );
       return;
     }
     setState(() {
-        _loading = true;
-    }); 
-
-    Employee foundEmployee = await _allRequest.fetchEmployee(employeeRfid, (){
-      setState(() {
-        _loading = false;
-      }); 
+      _loading = true;
     });
 
-    _alcoholTest.employee = foundEmployee;
+    Employee foundEmployee = await _allRequest.fetchEmployee(employeeRfid, () {
+      setState(() {
+        _loading = false;
+      });
+    });
+
+    _temp.employee = foundEmployee;
+
     if (foundEmployee == null) {
       _showSnackbar('Usuario no encontrado, Guardando nuevo usuario anónimo...',
           Colors.orangeAccent);
@@ -292,7 +239,8 @@ class _MyAppState extends State<MyApp> {
         setState(() {
           _loading = true;
         });
-        var trySaveEmployee = await _allRequest.saveNewEmployee(employeeRfid, _alcoholTest, (){
+        var trySaveEmployee =
+            await _allRequest.saveNewEmployee(employeeRfid, _company, () {
           setState(() {
             _loading = false;
           });
@@ -310,7 +258,8 @@ class _MyAppState extends State<MyApp> {
         }
       } catch (e) {
         print(e);
-        _showSnackbarAndReset('Error al guardar nuevo usuario anónimo', Colors.redAccent);
+        _showSnackbarAndReset(
+            'Error al guardar nuevo usuario anónimo', Colors.redAccent);
       }
 
       // return;
@@ -326,17 +275,13 @@ class _MyAppState extends State<MyApp> {
     setState(() {
       _loading = false;
       _fetchedEmployee = null;
-      _alcoholTest = AlcoholTest(
-          company: _company,
-          equipment: _equipment); // This resets the whole thing.
+      _temp =
+          TemperatureDoc(company: _company, equipment: _equipment, temp: null);
+      // This resets the whole thing.
     });
     Timer(Duration(milliseconds: 50), () {
       myFocusNode.requestFocus();
     });
-  }
-
-  String _getAlcoResultText(AlcoholResult result) {
-    return result == AlcoholResult.alcoholFound ? 'Fail' : 'Pass';
   }
 
   @override
@@ -402,127 +347,156 @@ class _MyAppState extends State<MyApp> {
     _connectTo(null);
   }
 
+  void _testTemperature() async {
+    // Random random = new Random();
+
+    _timer.cancel();
+    _timer = Timer(Duration(seconds: 5), () {
+      _resetValues();
+    });
+
+    if (_fetchedEmployee != null) {
+      var saveAlcoResponse = await _allRequest.saveTemperature(_temp);
+      inspect(saveAlcoResponse);
+
+      if (saveAlcoResponse.toString().contains('errors')) {
+        _showSnackbarAndReset('Error al tratar de guardar registro', Colors.redAccent);
+        return;
+      }
+      if (saveAlcoResponse.toString().contains('newTempDocument')) {
+        _showSnackbar('Registro guardado', Colors.greenAccent);
+        return;
+      }
+    } else {
+      _showSnackbar(
+        "Por favor ingresa # de usuario antes de hacer la prueba",
+        Colors.orange[900],
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-        home: Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: _alcoColor,
-      appBar: AppBar(
-        title: Image.asset('assets/cardiotrack_logo.png', fit: BoxFit.cover),
-        backgroundColor: Colors.white,
-        // title: const Text('Alcotrack Demo App'),
-      ),
-      body: Center(
-        child: Column(
-          children: <Widget>[
-            Spacer(),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10.0),
-              child:
-                  Column(
-                children: [
-                  notEmptyPorts && _status == "Connected"
-                      ? Text(
-                          _alcoholTest.alcoholResult == AlcoholResult.notSet
-                              ? _alcoholTest.employee != null
-                                  ? 'Sopla en la boquilla para realizar la prueba'
-                                  : 'Acerca tu tarjeta al lector o sopla en la boquilla para realizar la prueba'
-                              : _getAlcoResultText(_alcoholTest.alcoholResult),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
+      home: Scaffold(
+        key: _scaffoldKey,
+        backgroundColor: _backColor,
+        appBar: AppBar(
+          title: Image.asset('assets/cardiotrack_logo.png', fit: BoxFit.cover),
+          backgroundColor: Colors.white,
+        ),
+        body: Center(
+          child: Column(
+            children: <Widget>[
+              Spacer(),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10.0),
+                child: Column(
+                  children: [
+                    notEmptyPorts && _status == "Connected"
+                        ? Text(
+                            _temp.temperature() == 0
+                                ? _temp.employee != null
+                                    ? 'Acerca tu frente al sensor para la lectura'
+                                    : 'Pasa tu tarjeta al lector o acerca tu frente al sensor'
+                                : _temp.tempC,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
                               color: Colors.white,
-                              fontSize: _alcoholTest.alcoholResult ==
-                                      AlcoholResult.notSet
-                                  ? 25
-                                  : 150))
-                      : Text('Por favor conecta el alcoholímetro 📲',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              color: Colors.orange[900], fontSize: 45)),
-                  if (_status != "Connected") ..._ports,
-                ],
-              ),
-            ),
-            Spacer(),
-            Center(
-                child: Card(
-              child: Column(
-                children: [
-                  if (_connectionStatus == 'ConnectivityResult.none')
-                    Text(
-                      'Please connect to Internet',
-                      style: TextStyle(color: Colors.red),
-                    )
-                  else
-                    Text(
-                      'Internet Connection',
-                      style: TextStyle(color: Colors.green),
-                    ),
-                  Text(notEmptyPorts
-                      ? 'Device Status: $_status\n'
-                      : 'Device Status: $_status\n'),
-                  Row(children: [
-                    SizedBox(
-                      height: 35,
-                      width: 250,
-                      child: _loading
-                          ? Center(
-                              child: SizedBox(
-                                width: 30,
-                                height: 30,
-                                child: CircularProgressIndicator(),
-                              ),
-                            )
-                          : Text(
-                              _fetchedEmployee != null
-                                  ? _fetchedEmployee.fullName
-                                  : "Ingresa un # de usuario",
-                              style: Theme.of(context).textTheme.headline6,
-                              textAlign: TextAlign.center,
+                              fontSize: _temp.temperature() == 0 ? 25 : 100,   
                             ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        _equipment.equipmentId,
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ]),
-                  ListTile(
-                    title: TextField(
-                        enabled: _fetchedEmployee == null || _loading,
-                        controller: _textController,
-                        decoration: InputDecoration(
-                            border: OutlineInputBorder(),
-                            labelText: '# de Usuario + Enter',
-                            hintText: '123456'),
-                        onSubmitted: (value) {
-                          _getEmployee(value);
-                        },
-                        focusNode: myFocusNode,
-                        autofocus: true),
-                    trailing: RaisedButton(
-                        child: Text("Nuevo Usuario"),
-                        onPressed: _resetValues),
-                        
-                    // onPressed: _testAlcohol),
-                  ),
-                  Text(_company.companyName,
-                      style: TextStyle(
-                          color: Colors.blue[700],
-                          fontWeight: FontWeight.bold)),
-                  Text(
-                    'Al usar este equipo acepto los "Términos y condiciones" y el "Aviso de privacidad": cardiotrack.mx/ape',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey, fontSize: 8),
-                  )
-                ],
+                          )
+                        : Text('Por favor conecta el termometro 📲',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: Colors.orange[900], fontSize: 45)),
+                    if (_status != "Connected") ..._ports,
+                  ],
+                ),
               ),
-            ))
-          ],
+              Spacer(),
+              Center(
+                child: Card(
+                  child: Column(
+                    children: [
+                      if (_connectionStatus == 'ConnectivityResult.none')
+                        Text(
+                          'Please connect to Internet',
+                          style: TextStyle(color: Colors.red),
+                        )
+                      else
+                        Text(
+                          'Internet Connection',
+                          style: TextStyle(color: Colors.green),
+                        ),
+                      Text(notEmptyPorts
+                          ? 'Device Status: $_status\n'
+                          : 'Device Status: $_status\n'),
+                      Row(children: [
+                        SizedBox(
+                          height: 35,
+                          width: 250,
+                          child: _loading
+                              ? Center(
+                                  child: SizedBox(
+                                    width: 30,
+                                    height: 30,
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                )
+                              : Text(
+                                  _fetchedEmployee != null
+                                      ? _fetchedEmployee.fullName
+                                      : "Ingresa un # de usuario",
+                                  style: Theme.of(context).textTheme.headline6,
+                                  textAlign: TextAlign.center,
+                                ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            _equipment.equipmentId,
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ]),
+                      ListTile(
+                        title: TextField(
+                            enabled: _fetchedEmployee == null || _loading,
+                            controller: _textController,
+                            decoration: InputDecoration(
+                              border: OutlineInputBorder(),
+                              labelText: '# de Usuario + Enter',
+                              hintText: '123456',
+                            ),
+                            onSubmitted: (value) {
+                              _getEmployee(value);
+                            },
+                            focusNode: myFocusNode,
+                            autofocus: true),
+                        trailing: RaisedButton(
+                          child: Text("Nuevo Usuario"),
+                          // onPressed: _resetValues),
+
+                          onPressed: _testTemperature,
+                        ),
+                      ),
+                      Text(_company.companyName,
+                          style: TextStyle(
+                              color: Colors.blue[700],
+                              fontWeight: FontWeight.bold)),
+                      Text(
+                        'Al usar este equipo acepto los "Términos y condiciones" y el "Aviso de privacidad": cardiotrack.mx/ape',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey, fontSize: 8),
+                      )
+                    ],
+                  ),
+                ),
+              )
+            ],
+          ),
         ),
       ),
-    ));
+    );
   }
 }
