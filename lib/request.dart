@@ -2,15 +2,15 @@ import 'dart:developer';
 import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'Company.dart';
-import 'Employee.dart';
-import 'AlcoholTest.dart';
-import 'TemperatureDoc.dart';
+import './models/Company.dart';
+import './models/Employee.dart';
+import './models/AlcoholTest.dart';
+import './models/TemperatureDoc.dart';
 
 class Request {
   String token;
   String apiEndpoint;
-  Request({ this.token, this.apiEndpoint });
+  Request({ this.token = "", this.apiEndpoint = ""});
 
   Future fetchEmployee( String rfid, Function callback ) async {
 
@@ -118,5 +118,26 @@ class Request {
     }
   }
 
+  Future loginRequest(String username, String password) async {
+    String mutationString =
+        "mutation{signinEquipmentUser(username:\"$username\", password:\"$password\"){ token companyId companyName } }";
+    print(mutationString);
+    var headers = {
+      'Content-Type': 'application/json'
+    };
+    try {
+      final loginResponse = await http.post(apiEndpoint,
+          headers: headers, body: jsonEncode({"query": mutationString}));
 
+      if (loginResponse.statusCode == 200) {
+        print('status code 200 from _loginRequest');
+
+        return loginResponse.body;
+      } else {
+        throw Exception('Failed to login');
+      }
+    } catch (e) {
+      print(e);
+    }
+  }
 }
